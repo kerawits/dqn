@@ -41,50 +41,34 @@ class Environment:
         return self.terminal and self.lives == 0
 
     def action(self, action, repeat=1, display=True):
-        # print(repeat)
-        reward = 0
-        terminal_tp = False
+        action_reward = 0
         for _ in range(repeat):
-            x_tp, r_t, terminal_tp, info = self.env.step(action)
+            x_tp, r_t, self.terminal, info = self.env.step(action)
+
+            if display:
+                self.env.render()
+
             self.score_game += r_t
+            action_reward += r_t
 
-            try:
-                # check if a live was lost in a multi-live games
-                if self.lives != 0 and self.lives != info['ale.lives']:
-                    terminal_tp = True
-                    r_t += self.config.min_reward
+            if self.lives != 0:
+                 if self.lives != info['ale.lives']:
+                    action_reward = self.config.min_reward
+                    self.terminal = True
                     self.lives = info['ale.lives']
-            except:
-                # do nothing
-                pass
+                    break
 
-            reward += self.cap_reward(r_t)
-
-            if terminal_tp:
-                self.terminal = True
+            if self.terminal:
                 break
 
-        self.reward_game += self.cap_reward(reward)
+        self.reward_game += self.cap_reward(action_reward)
 
-        if display:
-            self.env.render()
+        # print('action: {}, reward: {}, terminal: {}'.format(action, self.cap_reward(action_reward), self.terminal))
 
-        # if reward != 0:
-        #     print('========reward========')
-        #     print('reward: {}'.format(reward))
-        #     print('terminal: {}'.format(terminal_tp))
-        #     print('self.lives: {}'.format(self.lives))
-        #     print('self.reward_game: {}'.format(self.reward_game))
-        #     print('self.score_game: {}'.format(self.score_game))
-        #     print('game_over: {}'.format(self.game_over()))
-
-        return self.preprocess_image(x_tp), self.cap_reward(reward), self.terminal
-
-    # def rgb2gray(self, image):
-    #     return np.dot(image[...,:3] , [0.299, 0.587, 0.114])
+        return self.preprocess_image(x_tp), self.cap_reward(action_reward), self.terminal
 
     def preprocess_image(self, image):
-        return cv2.resize(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), dsize=(self.config.screen_height, self.config.screen_width))
+        return cv2.resize(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), dsize=(self.config.screen_height, self.config.screen_width)) / 255
 
     def number_of_actions(self):
         return self.env.action_space.n

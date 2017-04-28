@@ -3,6 +3,7 @@ import tensorflow as tf
 import random
 import os
 import time
+import pprint
 
 from .history import History
 from .memory import Memory
@@ -20,8 +21,9 @@ class Agent:
         self.memory = Memory(self.config)
         self.step = 1
 
-        print('double_dqn:', self.config.double_dqn)
+        print('config: {}'.format(vars(config)))
 
+        self.init_summary()
         self.init_statistics()
         self.buid_dqn()
 
@@ -32,9 +34,18 @@ class Agent:
         if np.random.uniform() < self.epsilon:
             return random.randint(0, self.environment.number_of_actions() - 1)
         else:
-            q_action, self.Q = self.sess.run([self.q_action, self.q], feed_dict={self.s_t: [s_t]})
+            [q_action, Q] = self.sess.run([self.q_action, self.q], feed_dict={self.s_t: [s_t]})
+
+            self.predicted_Q_max = np.append(self.predicted_Q_max, np.max(Q[0]))
+            self.predicted_actions = np.append(self.predicted_actions, q_action[0])
+
+            # print('Q: {}'.format(Q))
 
             return q_action[0]
+
+    def init_summary(self):
+        self.predicted_Q_max = np.array([])
+        self.predicted_actions = np.array([])
 
     def init_statistics(self):
         self.statistics_start_time = time.time()
@@ -49,7 +60,7 @@ class Agent:
         print('time\t\t: {: .4f}\t\tsteps/s\t\t: {: .4f}'.format(time_interval, stats_print_frequency / time_interval))
         print('episode\t\t:  {}\t\t\tepsilon\t\t: {: .4f}'.format(self.game_rewards.shape[0], self.epsilon))
 
-        if self.game_rewards.shape[0] > 0:
+        if self.game_rewards.size > 0:
             print('sum_reward\t: {: .4f}\t\tmax_reward\t: {}'.format(self.game_rewards.sum(), self.game_rewards.max()))
             print('avg_reward\t: {: .4f}\t\tmin_reward\t: {}'.format(self.game_rewards.mean(), self.game_rewards.min()))
             print('sum_score\t: {: .4f}\t\tmax_score\t: {}'.format(self.game_scores.sum(), self.game_scores.max()))
@@ -78,13 +89,10 @@ class Agent:
             self.q, self.w5, self.b5 = fc_linear(out4, 512, self.environment.number_of_actions(), 'fc2')
             self.q_action = tf.argmax(self.q, axis=1)
 
-            tf.summary.image('sample_1', tf.reshape(tf.transpose(self.s_t[0], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
-            tf.summary.image('sample_2', tf.reshape(tf.transpose(self.s_t[1], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
-            tf.summary.image('sample_3', tf.reshape(tf.transpose(self.s_t[2], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
-            tf.summary.image('sample_4', tf.reshape(tf.transpose(self.s_t[3], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
-
-            tf.summary.histogram('q_action', self.q_action)
-            variable_summaries(self.q, name='q')
+            # tf.summary.image('sample_1', tf.reshape(tf.transpose(self.s_t[0], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
+            # tf.summary.image('sample_2', tf.reshape(tf.transpose(self.s_t[1], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
+            # tf.summary.image('sample_3', tf.reshape(tf.transpose(self.s_t[2], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
+            # tf.summary.image('sample_4', tf.reshape(tf.transpose(self.s_t[3], perm=[2, 0, 1]), [-1, 84, 84, 1]), max_outputs=4)
 
         # target network
         with tf.variable_scope('target'):
@@ -124,20 +132,32 @@ class Agent:
 
             self.loss = tf.reduce_mean(huber_loss(q_t_acted - self.q_t_target), name='loss')
 
+            # self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.config.learning_rate, momentum=self.config.momentum, epsilon=self.config.min_squared_gradient, name='RMSProp').minimize(self.loss)
+
             self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.config.learning_rate, decay=self.config.gradient_decay, momentum=self.config.momentum, epsilon=self.config.min_squared_gradient, centered=True, name='RMSProp').minimize(self.loss)
 
         with tf.variable_scope('performance'):
-            self.rewards_summary = tf.placeholder(tf.float32, None, name='rewards_summary')
-            self.scores_summary = tf.placeholder(tf.float32, None, name='scores_summary')
+            self.actions_summary = tf.placeholder(tf.float32, [None], name='actions_summary')
 
-            variable_summaries(self.rewards_summary, name='rewards')
-            variable_summaries(self.scores_summary, name='scores')
+            self.Q_max_summary = tf.placeholder(tf.float32, [None], name='Q_max_summary')
+            self.rewards_summary = tf.placeholder(tf.float32, [None], name='rewards_summary')
+            self.scores_summary = tf.placeholder(tf.float32, [None], name='scores_summary')
+
+            with tf.variable_scope('actions'):
+                tf.summary.histogram('histogram', self.actions_summary)
+
+            if self.config.create_summaries:
+                variable_summaries(self.Q_max_summary, name='Q_max')
+                variable_summaries(self.rewards_summary, name='rewards')
+                variable_summaries(self.scores_summary, name='scores')
 
         self.sess.run(tf.global_variables_initializer())
-        self.saver = tf.train.Saver()
-        self.summary = tf.summary.merge_all()
-        self.summary_writer = tf.summary.FileWriter(os.path.join(self.config.summaries_path, self.config.game))
-        self.summary_writer.add_graph(self.sess.graph)
+
+        if self.config.create_summaries:
+            self.saver = tf.train.Saver()
+            self.summary = tf.summary.merge_all()
+            self.summary_writer = tf.summary.FileWriter(os.path.join(self.config.summaries_path, self.config.game))
+            self.summary_writer.add_graph(self.sess.graph)
 
         self.load_model()
 
@@ -178,7 +198,6 @@ class Agent:
             self.saver.restore(self.sess, fname)
             self.step = int(self.ckpt_step.eval()) + 1
             print('Loaded: {}'.format(fname))
-            # print('Step: {}'.format(self.step))
             return True
         else:
             print('Initializing networks with random weights...')
@@ -200,10 +219,10 @@ class Agent:
         # start a new game
         self.environment.new_game()
         for _ in range(random.randint(0, self.config.agent_history_length)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
 
         for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
             self.observe(x_tp, r_t, 0, terminal_tp)
 
         print_with_time('Playing...')
@@ -221,10 +240,10 @@ class Agent:
 
                 self.environment.new_game()
                 for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
 
                 for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
             if play_step % self.config.stats_print_frequency == 0:
@@ -236,10 +255,10 @@ class Agent:
     def train(self):
         self.environment.new_game()
         for _ in range(random.randint(0, self.config.agent_history_length)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
 
         for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
             self.observe(x_tp, r_t, 0, terminal_tp)
 
         print_with_time('Observing...')
@@ -255,10 +274,10 @@ class Agent:
 
                 self.environment.new_game()
                 for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
 
                 for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
         self.print_statistics(observe_step, self.config.replay_start_size)
@@ -279,21 +298,24 @@ class Agent:
 
                 self.environment.new_game()
                 for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
 
                 for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, False)
+                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
-            if self.step % self.config.summary_frequency == 0:
-                summary_s_t, _, _, _, _ = self.memory.sample()
-                summary = self.sess.run(self.summary, feed_dict={
+            if self.config.create_summaries and self.predicted_Q_max.size > 0 and self.step % self.config.summary_frequency == 0:
+                [summary] = self.sess.run([self.summary], feed_dict={
+                    self.s_t: [self.history.get()],
+                    self.target_s_t: [self.history.get()],
                     self.scores_summary: self.game_scores,
                     self.rewards_summary: self.game_rewards,
-                    self.s_t: summary_s_t,
-                    self.target_s_t: summary_s_t
+                    self.Q_max_summary: self.predicted_Q_max,
+                    self.actions_summary: self.predicted_actions
                 })
+
                 self.summary_writer.add_summary(summary, self.step)
+                self.init_summary()
 
             if self.step % self.config.stats_print_frequency == 0:
                 if self.program_phase != 'train' and self.step >= self.config.final_exploration_frame:
@@ -305,7 +327,7 @@ class Agent:
                 print_with_time('Update target Q networks...')
                 self.update_target_network()
 
-            if self.step % self.config.model_save_frequency == 0:
+            if self.config.create_checkpoints and self.step % self.config.model_save_frequency == 0:
                 self.update_ckpt_step(self.step)
                 self.save_model(self.step)
 
