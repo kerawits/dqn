@@ -45,7 +45,7 @@ class Environment:
         for _ in range(repeat):
             x_tp, r_t, self.terminal, info = self.env.step(action)
 
-            if display:
+            if display and self.config.skipframe_display:
                 self.env.render()
 
             self.score_game += r_t
@@ -60,6 +60,9 @@ class Environment:
 
             if self.terminal:
                 break
+
+        if display and  not self.config.skipframe_display:
+            self.env.render()
 
         self.reward_game += self.cap_reward(action_reward)
 

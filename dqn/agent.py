@@ -3,7 +3,7 @@ import tensorflow as tf
 import random
 import os
 import time
-import pprint
+import datetime
 
 from .history import History
 from .memory import Memory
@@ -19,7 +19,11 @@ class Agent:
         self.environment = environment
         self.history = History(self.config)
         self.memory = Memory(self.config)
+
+        self.epsilon = self.config.initial_exploration
         self.step = 1
+        self.episode = 0
+        self.start_time = time.time()
 
         print('config: {}'.format(vars(config)))
 
@@ -46,25 +50,19 @@ class Agent:
     def init_summary(self):
         self.predicted_Q_max = np.array([])
         self.predicted_actions = np.array([])
-
-    def init_statistics(self):
-        self.statistics_start_time = time.time()
-        self.epsilon = self.config.initial_exploration
         self.game_rewards = np.array([])
         self.game_scores = np.array([])
 
+    def init_statistics(self):
+        self.statistics_start_time = time.time()
+
     def print_statistics(self, step, stats_print_frequency):
         time_interval = time.time() -  self.statistics_start_time
+        time_total = time.time() -  self.start_time
         print_with_time('step: {} ({})'.format(step, self.program_phase))
 
-        print('time\t\t: {: .4f}\t\tsteps/s\t\t: {: .4f}'.format(time_interval, stats_print_frequency / time_interval))
-        print('episode\t\t:  {}\t\t\tepsilon\t\t: {: .4f}'.format(self.game_rewards.shape[0], self.epsilon))
-
-        if self.game_rewards.size > 0:
-            print('sum_reward\t: {: .4f}\t\tmax_reward\t: {}'.format(self.game_rewards.sum(), self.game_rewards.max()))
-            print('avg_reward\t: {: .4f}\t\tmin_reward\t: {}'.format(self.game_rewards.mean(), self.game_rewards.min()))
-            print('sum_score\t: {: .4f}\t\tmax_score\t: {}'.format(self.game_scores.sum(), self.game_scores.max()))
-            print('avg_score\t: {: .4f}\t\tmin_score\t: {}'.format(self.game_scores.mean(), self.game_scores.min()))
+        print('time\t\t: {} Hr\tsteps/s\t\t: {: .4f}'.format(str(datetime.timedelta(seconds=time_total)), stats_print_frequency / time_interval))
+        print('episode\t\t: {}\t\t\tepsilon\t\t: {: .4f}'.format(self.episode, self.epsilon))
 
     def observe(self, x_tp, r_t, a_t, terminal_tp):
         self.history.add(x_tp)
@@ -130,7 +128,8 @@ class Agent:
             a_t_one_hot = tf.one_hot(self.a_t, self.environment.number_of_actions(), name='a_t_one_hot')
             q_t_acted = tf.reduce_sum(self.q * a_t_one_hot, reduction_indices=1, name='q_t_acted')
 
-            self.loss = tf.reduce_mean(huber_loss(q_t_acted - self.q_t_target), name='loss')
+            # self.loss = tf.reduce_mean(huber_loss(q_t_acted - self.q_t_target), name='loss')
+            self.loss = tf.reduce_sum(huber_loss(q_t_acted - self.q_t_target, 1.0), name='loss')
 
             # self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.config.learning_rate, momentum=self.config.momentum, epsilon=self.config.min_squared_gradient, name='RMSProp').minimize(self.loss)
 
@@ -154,11 +153,11 @@ class Agent:
         self.sess.run(tf.global_variables_initializer())
 
         if self.config.create_summaries:
-            self.saver = tf.train.Saver()
             self.summary = tf.summary.merge_all()
             self.summary_writer = tf.summary.FileWriter(os.path.join(self.config.summaries_path, self.config.game))
             self.summary_writer.add_graph(self.sess.graph)
 
+        self.saver = tf.train.Saver(max_to_keep=0)
         self.load_model()
 
     def update_target_network(self):
@@ -228,7 +227,7 @@ class Agent:
         print_with_time('Playing...')
         self.program_phase = 'playing'
         play_step = 1
-
+        play_game = 1
         while True:
             a_t = self.predict(self.history.get(), self.config.no_exploration)
             x_tp, r_t, terminal_tp = self.environment.action(a_t, self.config.action_repeat, self.config.play_display)
@@ -238,7 +237,11 @@ class Agent:
                 self.game_rewards = np.append(self.game_rewards, self.environment.reward_game)
                 self.game_scores = np.append(self.game_scores, self.environment.score_game)
 
+                print('game: {}\t\tscores: {}\t\t rewards: {}'.format(play_game, self.environment.score_game,  self.environment.reward_game))
+
+                play_game += 1
                 self.environment.new_game()
+
                 for _ in range(random.randint(0, self.config.agent_history_length)):
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
 
@@ -297,6 +300,8 @@ class Agent:
                 self.game_scores = np.append(self.game_scores, self.environment.score_game)
 
                 self.environment.new_game()
+                self.episode += 1
+
                 for _ in range(random.randint(0, self.config.agent_history_length)):
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
 
@@ -304,24 +309,25 @@ class Agent:
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
-            if self.config.create_summaries and self.predicted_Q_max.size > 0 and self.step % self.config.summary_frequency == 0:
-                [summary] = self.sess.run([self.summary], feed_dict={
-                    self.s_t: [self.history.get()],
-                    self.target_s_t: [self.history.get()],
-                    self.scores_summary: self.game_scores,
-                    self.rewards_summary: self.game_rewards,
-                    self.Q_max_summary: self.predicted_Q_max,
-                    self.actions_summary: self.predicted_actions
-                })
-
-                self.summary_writer.add_summary(summary, self.step)
-                self.init_summary()
-
             if self.step % self.config.stats_print_frequency == 0:
                 if self.program_phase != 'train' and self.step >= self.config.final_exploration_frame:
                     self.program_phase = 'train'
                 self.print_statistics(self.step, self.config.stats_print_frequency)
                 self.init_statistics()
+
+            if self.step % self.config.summary_frequency == 0:
+                if self.config.create_summaries and self.predicted_Q_max.size > 0 and self.game_rewards.size > 0:
+                    [summary] = self.sess.run([self.summary], feed_dict={
+                        self.s_t: [self.history.get()],
+                        self.target_s_t: [self.history.get()],
+                        self.scores_summary: self.game_scores,
+                        self.rewards_summary: self.game_rewards,
+                        self.Q_max_summary: self.predicted_Q_max,
+                        self.actions_summary: self.predicted_actions
+                    })
+
+                    self.summary_writer.add_summary(summary, self.step)
+                    self.init_summary()
 
             if self.step % self.config.target_network_update_frequency == 0:
                 print_with_time('Update target Q networks...')

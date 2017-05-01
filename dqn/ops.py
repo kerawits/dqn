@@ -5,9 +5,12 @@ import numpy as np
 def print_with_time(text):
     print('[{}] {}'.format(time.strftime('%Y-%m-%d %H:%M:%S'), text))
 
-def huber_loss(error):
+def huber_loss(error, clip):
     with tf.variable_scope('huber_loss'):
-        return tf.where(tf.abs(error) < 1.0, 0.5 * tf.square(error), tf.abs(error) - 0.5)
+        abs_error = tf.abs(error, name='abs')
+        quadratic_part = tf.clip_by_value(abs_error, 0.0, clip)
+        linear_part = abs_error - quadratic_part
+        return 0.5 * tf.square(quadratic_part) + (clip * linear_part)
 
 def conv_relu(input, kernel_shape, stride, channels_in, channels_out, padding, name='conv_relu'):
     with tf.variable_scope(name):
