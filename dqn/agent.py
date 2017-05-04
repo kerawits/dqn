@@ -64,6 +64,10 @@ class Agent:
         print('time\t\t: {} Hr\tsteps/s\t\t: {: .4f}'.format(str(datetime.timedelta(seconds=time_total)), stats_print_frequency / time_interval))
         print('episode\t\t: {}\t\t\tepsilon\t\t: {: .4f}'.format(self.episode, self.epsilon))
 
+    def init_history(self, x_tp):
+        for _ in range(self.config.agent_history_length):
+            self.observe(x_tp, 0, 0, False)
+
     def observe(self, x_tp, r_t, a_t, terminal_tp):
         self.history.add(x_tp)
         self.memory.add(x_tp, r_t, a_t, terminal_tp)
@@ -128,7 +132,7 @@ class Agent:
             a_t_one_hot = tf.one_hot(self.a_t, self.environment.number_of_actions(), name='a_t_one_hot')
             q_t_acted = tf.reduce_sum(self.q * a_t_one_hot, reduction_indices=1, name='q_t_acted')
 
-            # self.loss = tf.reduce_mean(huber_loss(q_t_acted - self.q_t_target), name='loss')
+            # self.loss = tf.reduce_mean(huber_loss(q_t_acted - self.q_t_target, 1.0), name='loss')
             self.loss = tf.reduce_sum(huber_loss(q_t_acted - self.q_t_target, 1.0), name='loss')
 
             # self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.config.learning_rate, momentum=self.config.momentum, epsilon=self.config.min_squared_gradient, name='RMSProp').minimize(self.loss)
@@ -215,12 +219,11 @@ class Agent:
         self.saver.save(self.sess, os.path.join(os.path.join(self.config.checkpoints_path, self.config.game), self.config.game), global_step=step)
 
     def play(self):
-        # start a new game
         self.environment.new_game()
-        for _ in range(random.randint(0, self.config.agent_history_length)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
+        x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+        self.init_history(x_tp)
 
-        for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
+        for _ in range(random.randint(0, self.config.no_op_max)):
             x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
             self.observe(x_tp, r_t, 0, terminal_tp)
 
@@ -241,11 +244,10 @@ class Agent:
 
                 play_game += 1
                 self.environment.new_game()
+                x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+                self.init_history(x_tp)
 
-                for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
-
-                for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
+                for _ in range(random.randint(0, self.config.no_op_max)):
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.play_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
@@ -257,17 +259,18 @@ class Agent:
 
     def train(self):
         self.environment.new_game()
-        for _ in range(random.randint(0, self.config.agent_history_length)):
-            x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+        x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+        self.init_history(x_tp)
 
-        for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
+        for _ in range(random.randint(0, self.config.no_op_max)):
             x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
             self.observe(x_tp, r_t, 0, terminal_tp)
 
         print_with_time('Observing...')
         self.program_phase = 'observe'
         for observe_step in range(1, self.config.replay_start_size + 1):
-            a_t = self.predict(self.history.get(), self.config.initial_exploration)
+            # a_t = self.predict(self.history.get(), self.config.initial_exploration)
+            a_t = self.predict(self.history.get())
             x_tp, r_t, terminal_tp = self.environment.action(a_t, self.config.action_repeat, self.config.observe_display)
             self.observe(x_tp, r_t, a_t, terminal_tp)
 
@@ -276,10 +279,10 @@ class Agent:
                 self.game_scores = np.append(self.game_scores, self.environment.score_game)
 
                 self.environment.new_game()
-                for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+                x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+                self.init_history(x_tp)
 
-                for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
+                for _ in range(random.randint(0, self.config.no_op_max)):
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 
@@ -301,11 +304,10 @@ class Agent:
 
                 self.environment.new_game()
                 self.episode += 1
+                x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.observe_display)
+                self.init_history(x_tp)
 
-                for _ in range(random.randint(0, self.config.agent_history_length)):
-                    x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
-
-                for _ in range(random.randint(self.config.agent_history_length, self.config.no_op_max)):
+                for _ in range(random.randint(0, self.config.no_op_max)):
                     x_tp, r_t, terminal_tp = self.environment.action(0, self.config.action_repeat, self.config.train_display)
                     self.observe(x_tp, r_t, 0, terminal_tp)
 

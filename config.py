@@ -13,8 +13,8 @@ class Config:
         # self.create_checkpoints = False
         # self.create_summaries = False
 
-        self.checkpoints_path = 'checkpoints/20M'
-        self.summaries_path = 'summaries/20M'
+        self.checkpoints_path = 'checkpoints'
+        self.summaries_path = 'summaries'
         # self.checkpoints_path = 'checkpoints'
         # self.summaries_path = 'summaries'
 
@@ -32,7 +32,7 @@ class Config:
         self.play_display = True
         self.skipframe_display = False
 
-        self.final_training = 20000000
+        self.final_training = 50000000
 
         self.min_reward = -1.0
         self.max_reward = 1.0
@@ -66,6 +66,6 @@ class Config:
         self.no_exploration = 0.05
 
         self.final_exploration_frame = self.scale * 100
-        self.replay_start_size = self.scale * 5
+        self.replay_start_size = self.scale * 10
 
-        self.no_op_max = 10
+        self.no_op_max = 5
