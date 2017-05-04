@@ -2,10 +2,10 @@ class Config:
     def __init__(self):
         self.scale = 10000
 
-        # self.game = 'Pong-v0'
-        self.game = 'Breakout-v0'
-        # self.game = 'MsPacman-v0'
-        # self.game = 'SpaceInvaders-v0'
+        # self.game = 'PongDeterministic-v3'
+        self.game = 'BreakoutDeterministic-v3'
+        # self.game = 'MsPacmanDeterministic-v3'
+        # self.game = 'SpaceInvadersDeterministic-v3'
         # self.game = 'FlappyBird-v0'
 
         self.create_checkpoints = True
@@ -34,8 +34,8 @@ class Config:
 
         self.final_training = 50000000
 
-        self.min_reward = -1.0
-        self.max_reward = 1.0
+        self.min_reward = -1
+        self.max_reward = 1
 
         self.model_save_frequency = self.scale * 5
         self.stats_print_frequency = self.scale * 5
@@ -66,6 +66,6 @@ class Config:
         self.no_exploration = 0.05
 
         self.final_exploration_frame = self.scale * 100
-        self.replay_start_size = self.scale * 10
+        self.replay_start_size = self.scale * 5
 
         self.no_op_max = 5

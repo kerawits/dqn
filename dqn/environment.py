@@ -16,12 +16,18 @@ class Environment:
         print('action_meanings: {}'.format(self.action_meanings()))
 
         try:
-            print('env.frameskip: {}'.format(self.env.frameskip))
+            print('env: {}'.format(vars(self.env)))
+            # print('env.frameskip: {}'.format(self.env.frameskip))
         except:
             pass
 
     def cap_reward(self, reward):
-        return reward if reward == 0.0 else self.config.min_reward if reward < 0.0 else self.config.max_reward
+        if reward > 0:
+            return self.config.max_reward
+        elif reward < 0:
+            return self.config.min_reward
+        else:
+            return 0
 
     def new_game(self):
         self.env.reset()
@@ -41,7 +47,7 @@ class Environment:
         return self.terminal and self.lives == 0
 
     def action(self, action, repeat=1, display=True):
-        action_reward = 0
+        acc_reward = 0
         for _ in range(repeat):
             x_tp, r_t, self.terminal, info = self.env.step(action)
 
@@ -49,11 +55,11 @@ class Environment:
                 self.env.render()
 
             self.score_game += r_t
-            action_reward += r_t
+            acc_reward += r_t
 
             if self.lives != 0:
                  if self.lives != info['ale.lives']:
-                    action_reward = self.config.min_reward
+                    acc_reward = self.config.min_reward
                     self.terminal = True
                     self.lives = info['ale.lives']
                     break
@@ -64,11 +70,11 @@ class Environment:
         if display and  not self.config.skipframe_display:
             self.env.render()
 
-        self.reward_game += self.cap_reward(action_reward)
+        self.reward_game += self.cap_reward(acc_reward)
 
         # print('action: {}, reward: {}, terminal: {}'.format(action, self.cap_reward(action_reward), self.terminal))
 
-        return self.preprocess_image(x_tp), self.cap_reward(action_reward), self.terminal
+        return self.preprocess_image(x_tp), self.cap_reward(acc_reward), self.terminal
 
     def preprocess_image(self, image):
         return cv2.resize(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), dsize=(self.config.screen_height, self.config.screen_width)) / 255
