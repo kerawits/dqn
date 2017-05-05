@@ -1,5 +1,5 @@
 # dqn
-Tensorflow implementation of the deep Q-learning based on the DeepMind Nature paper in 2013 using OpenAI Gym as the environment. Environment and various hyper parameters as well as the option to enable Double Q-learning can also be set in the configuration file.
+Tensorflow implementation of the deep Q-learning based on the DeepMind Nature paper in 2015 using OpenAI Gym as the environment. Environment and various hyper parameters as well as the option to enable Double Q-learning can also be set in the configuration file.
 
 ## Dependencies
 1. Tensorflow
